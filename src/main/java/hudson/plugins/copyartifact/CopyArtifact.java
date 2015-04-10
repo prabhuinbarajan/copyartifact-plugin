@@ -339,6 +339,11 @@ public class CopyArtifact extends Builder implements SimpleBuildStep {
 
         expandedProject = env.expand(project);
         Job<?, ?> job = Jenkins.getInstance().getItem(expandedProject, getItemGroup(build), Job.class);
+        if(job == null ) {
+            String replacedProjectName=expandedProject.replace("/", "/job/");
+            job = Jenkins.getInstance().getItem(replacedProjectName, getItemGroup(build), Job.class);
+
+        }
         if (job != null && !expandedProject.equals(project)
             // If projectName is parameterized, need to do permission check on source project.
             && !canReadFrom(job, build)) {
@@ -347,6 +352,8 @@ public class CopyArtifact extends Builder implements SimpleBuildStep {
         if (job == null) {
             throw new AbortException(Messages.CopyArtifact_MissingProject(expandedProject));
         }
+        console.println("project found " + job.getFullName() + ":"+ parameters  + ":" + selector) ;
+
         Run src = selector.getBuild(job, env, parameters != null ? new ParametersBuildFilter(env.expand(parameters)) : new BuildFilter(), build);
         if (src == null) {
             String message = Messages.CopyArtifact_MissingBuild(expandedProject);
@@ -370,6 +377,12 @@ public class CopyArtifact extends Builder implements SimpleBuildStep {
         envData.add(getItemGroup(build), expandedProject, src.getNumber());
         if (target.length() > 0) targetDir = new FilePath(targetDir, env.expand(target));
         expandedFilter = env.expand(filter);
+        if(expandedFilter!= null) {
+            if(expandedFilter.contains("$")) {
+                expandedFilter = env.expand(expandedFilter);
+                expandedFilter = expandedFilter.replace("${BUILD_OFFSET}","");
+            }
+        }
         if (expandedFilter.trim().length() == 0) expandedFilter = "**";
         expandedExcludes = env.expand(expandedExcludes);
         if (StringUtils.isBlank(expandedExcludes)) {

@@ -26,6 +26,7 @@ package hudson.plugins.copyartifact;
 
 import java.util.logging.Logger;
 
+import hudson.model.*;
 import jenkins.model.Jenkins;
 
 import org.apache.commons.lang.StringUtils;
@@ -35,13 +36,6 @@ import org.kohsuke.stapler.QueryParameter;
 
 import hudson.EnvVars;
 import hudson.Extension;
-import hudson.model.AutoCompletionCandidates;
-import hudson.model.Item;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.Descriptor;
-import hudson.model.Job;
-import hudson.model.Run;
 import hudson.util.FormValidation;
 
 /**
@@ -116,29 +110,54 @@ public class DownstreamBuildSelector extends BuildSelector {
                 copier,
                 AbstractProject.class
         );
+        if(upstreamProject == null && projectName.contains("/")) {
+            String replacedProjectName=projectName.replace("/", "/job/");
+            LOGGER.info( String.format("replaced project name %s with %s", projectName, replacedProjectName));
+            upstreamProject = Jenkins.getInstance().getItem(
+                    projectName,
+                    copier,
+                    AbstractProject.class
+            );
+        }
         if (upstreamProject == null || !upstreamProject.hasPermission(Item.READ)) {
             LOGGER.warning(String.format("Upstream project '%s' is not found.", projectName));
+
             return false;
         }
-        AbstractBuild<?,?> upstreamBuild = ((AbstractBuild<?,?>)run).getUpstreamRelationshipBuild(upstreamProject);
-        if (upstreamBuild == null || !upstreamBuild.hasPermission(Item.READ)) {
-            LOGGER.fine(String.format("No upstream build of project '%s' is found for build %s-%s.", upstreamProject.getFullName(), run.getParent().getFullName(), run.getDisplayName()));
-            return false;
-        }
-        
+        int number = 0;
         try {
-            int number = Integer.parseInt(buildNumber);
-            if (number == upstreamBuild.getNumber()) {
-                // build number matches.
-                return true;
-            }
+             number = Integer.parseInt(buildNumber);
+
         } catch (NumberFormatException e) {
             // Ignore. Nothing to do.
         }
-        
-        if (buildNumber.equals(upstreamBuild.getId()) || buildNumber.equals(upstreamBuild.getDisplayName())) {
-            // id or display name matches.
-            return true;
+        AbstractBuild<?,?> upstreamBuild = ((AbstractBuild<?,?>)run).getUpstreamRelationshipBuild(upstreamProject);
+        if (upstreamBuild == null || !upstreamBuild.hasPermission(Item.READ)) {
+            LOGGER.fine(String.format("No upstream build of project '%s' is found for build %s-%s. going downstream", upstreamProject.getFullName(), run.getParent().getFullName(), run.getDisplayName()));
+            //return false;
+
+            Cause.UpstreamCause cause = (Cause.UpstreamCause)run.getCause(Cause.UpstreamCause.class);
+            if( cause.getUpstreamProject() != null && cause.getUpstreamProject().equals(projectName)) {
+                if(cause.getUpstreamBuild() == number){
+                    return true;
+                }
+            }
+
+        }
+        else {
+            try {
+                if (number == upstreamBuild.getNumber()) {
+                    // build number matches.
+                    return true;
+                }
+            } catch (NumberFormatException e) {
+                // Ignore. Nothing to do.
+            }
+
+            if (buildNumber.equals(upstreamBuild.getId()) || buildNumber.equals(upstreamBuild.getDisplayName())) {
+                // id or display name matches.
+                return true;
+            }
         }
         
         LOGGER.fine(String.format("build %s-%s doesn't match %s.", run.getParent().getFullName(), run.getDisplayName(), buildNumber));
